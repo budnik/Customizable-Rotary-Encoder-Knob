@@ -1,3 +1,3 @@
 # Customizable-Rotary-Encoder-Knob
 
-OpenSCAD code for: https://www.thingiverse.com/thing:2797118
+Modified OpenSCAD code for Cheapino\[Копійчина](https://копійчина.d1b.dev/)
