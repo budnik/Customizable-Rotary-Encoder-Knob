@@ -1,23 +1,23 @@
 /*
  Simple knob for rotary encoder.
 
- Author: tsw 
+ Author: tsw, modfied by @budnik and Gemini
 */
 
 //Disable $fn and $fa
 $fn=0;
 $fa=0.01;
 
-// fine 
+// fine
 $fs=0.5;
 
 // settings for the knob
-// height of the knob
-height = 13;
+// height of the knob BODY (sits on top of brim)
+height = 10; // MODIFIED: New default height
 // width
-width = 45;
+width = 25;
 // chamfer amount for the top larger value => more chamfer
-chamfer = 0.1;
+chamfer = 0.2;
 // tolerance for the shaft, larger => looser fit
 shaft_tolerance = 0.15;
 
@@ -25,11 +25,12 @@ shaft_tolerance = 0.15;
 ridge = 0;
 // how many ridges
 ridges = 73;
-// rim at the bottom? (nice with ridges)
-rim = 0;
 // knurling with the excellent knurledfinish library by aubenc (included at the bottom of this file)
 knurling = 1;
 
+// NEW: Brim settings
+brim_height = 5.4;
+brim_inner_diameter = 13;
 
 
 /*
@@ -38,43 +39,54 @@ knurling = 1;
 module ridge(ridges, outerRadius, innerRadius) {
   if(ridge) {
     // calculate width for bottom of the ridge
-    ridge_width = outerRadius / ridges * 3;    
+    ridge_width = outerRadius / ridges * 3;
     for(i=[1:ridges]) {
       rotate((i)*(360/ridges),0)
-        translate([0, innerRadius, 0])  
-          linear_extrude(height = height-2)
+        translate([0, innerRadius, 0])
+          linear_extrude(height = height-2) // Uses knob body height
             polygon(points=[[-ridge_width/2,0],[0,outerRadius-innerRadius],[ridge_width/2,0]], paths=[[0,1,2]]);
-    }  
+    }
   }
 }
 
 /*
-* Rim "lip" at the bottom of the body, works nicely with the ridges
+* NEW: Rim "brim" at the bottom of the body.
+* Creates a brim with a triangular cross-section,
+* vertical outer side, and horizontal top side.
 */
-module knobrim() {
-  if(rim) {
-    cylinder(h = h/10, r1 = r+1, r2 = r+1, center = false);
-  }
+module knobrim(knob_width, brim_h, brim_ir) {
+    outer_radius = (knob_width / 2)-0.7;
+    rotate_extrude(convexity = 10) {
+        polygon(points = [
+            [outer_radius, 0],          // Bottom outer
+            [outer_radius, brim_h],     // Top outer
+            [brim_ir, brim_h]           // Top inner
+        ]);
+    }
 }
 
+
 /*
-* hole for the finger
+* MODIFIED: hole for the finger
+* Adjusted Z position to account for brim height.
 */
 module finger_hole(r) {
-  translate([0, width/3.5, height+3])
-    sphere(r=r);
+  translate([0, width/2.5, brim_height + height + 5.1 ]) // Added brim_height
+    sphere(r=r*1);
 }
 
 /*
-* hole for the shaft
+* MODIFIED: hole for the shaft
+* Ensures D-cut extends through height h.
 */
-module shaft_hole(r) {
+module shaft_hole(h, r) {
   difference() {
     // the main shaft, give a bit of slack into it also
-    cylinder(h = h, r = r + shaft_tolerance, center = false);
+    cylinder(h = h, r = r + shaft_tolerance, $fs=0.1); // Added $fs for smoother hole
     // the slot, and move it to the correct place
-    translate([0, -30/2-r/1.7, 0])
-      cube(30,30,30, center=true);
+    // Make it tall enough and center it around the cylinder's height
+    translate([0, -15 - r/1.7, h/2]) // Adjusted Y pos for center=true cube
+       cube([30, 30, h + 2], center=true); // Use h and ensure it cuts through
   }
 }
 
@@ -84,39 +96,44 @@ module shaft_hole(r) {
 module mainbody(h, r, center) {
     union() {
       if(knurling) {
-        knurl(k_cyl_hg	= h,	k_cyl_od	= r*2); 
+        knurl(k_cyl_hg    = h,    k_cyl_od    = r*2);
       } else {
         cylinder(h = h, r1 = r, r2 = r, center = false);
       }
-      // rim at the bottom
-      knobrim(h=h, r=r);
     }
 }
 
 /*
-* assebmle the knob
+* MODIFIED: assemble the knob
+* Translates knob body up, keeps brim at bottom, adjusts shaft hole.
 */
 module knob(h, r) {
-    // main body of the knob
-
   difference() {
     union() {
-      mainbody(h=h, r=r, center=false);
-      ridge(ridges=ridges, outerRadius=r+1, innerRadius=r);
+      // MODIFIED: Place knob body on top of brim
+      translate([0, 0, brim_height]) {
+          mainbody(h=h, r=r, center=false);
+          ridge(ridges=ridges, outerRadius=r+1, innerRadius=r);
+      }
+      // Brim at the bottom (z=0)
+      knobrim(width, brim_height, brim_inner_diameter / 2);
     }
+    // Call modified finger_hole
     finger_hole(r=7);
-    translate([0,0,-3.5]) {
-      shaft_hole(h=h+2, r=6/2);
+    // MODIFIED: Adjust shaft hole height and position for new total height
+    translate([0,0,-1]) {
+      shaft_hole(h = brim_height + h + 0.75, r = 6/2); // h = brim_h + knob_h + 1_below - 0.25_gap
     }
   }
-
 }
 
 /*
-* helper for the chamfer 
+* MODIFIED: helper for the chamfer
+* Adjusted Z position to account for brim height.
 */
 module chamfer(h, r, chamfer) {
-    rotate_extrude($fn=200) translate([r-5-chamfer,h-6-chamfer,0]) polygon( points=[[0,10],[10,10], [10,0]] );
+    // MODIFIED: Added brim_height to Z calculation (Y before rotation)
+    rotate_extrude($fn=200) translate([r-5-chamfer, brim_height + h - 6 - chamfer, 0]) polygon( points=[[0,10],[10,10], [10,0]] );
 }
 
 /*
@@ -127,23 +144,16 @@ module knob_chamfered(h, r, chamfer) {
     knob(h=height, r=width/2);
     chamfer(h, r, chamfer);
     // chamfer
-  }  
+  }
 }
 
 // do it
 knob_chamfered(h=height, r=width/2, chamfer=chamfer);
 
 
-
-
-
-
-
-
-
 /*
  * knurledFinishLib_v2.scad
- * 
+ *
  * Written by aubenc @ Thingiverse
  *
  * This script is licensed under the Public Domain license.
@@ -153,48 +163,20 @@ knob_chamfered(h=height, r=width/2, chamfer=chamfer);
  * Derived from knurledFinishLib.scad (also Public Domain license) available at
  *
  * http://www.thingiverse.com/thing:9095
- *
- * Usage:
- *
- *	 Drop this script somewhere where OpenSCAD can find it (your current project's
- *	 working directory/folder or your OpenSCAD libraries directory/folder).
- *
- *	 Add the line:
- *
- *		use <knurledFinishLib_v2.scad>
- *
- *	 in your OpenSCAD script and call either...
- *
- *    knurled_cyl( Knurled cylinder height,
- *                 Knurled cylinder outer diameter,
- *                 Knurl polyhedron width,
- *                 Knurl polyhedron height,
- *                 Knurl polyhedron depth,
- *                 Cylinder ends smoothed height,
- *                 Knurled surface smoothing amount );
- *
- *  ...or...
- *
- *    knurl();
- *
- *	If you use knurled_cyl() module, you need to specify the values for all and
- *
- *  Call the module ' help(); ' for a little bit more of detail
- *  and/or take a look to the PDF available at http://www.thingiverse.com/thing:9095
- *  for a in depth descrition of the knurl properties.
  */
 
 
-module knurl(	k_cyl_hg	= 12,
-					k_cyl_od	= 25,
-					knurl_wd =  3,
-					knurl_hg =  4,
-					knurl_dp =  1.5,
-					e_smooth =  2,
-					s_smooth =  0)
+module knurl(      k_cyl_hg    = 12,
+                   k_cyl_od    = 25,
+                   knurl_wd =  3,
+                   knurl_hg =  4,
+                   knurl_dp =  1.5,
+                   e_smooth =  2,
+                   s_smooth =  0)
 {
-    knurled_cyl(k_cyl_hg, k_cyl_od, 
-                knurl_wd, knurl_hg, knurl_dp, 
+    // MODIFIED: Ensure knurl height matches knob body height
+    knurled_cyl(height, k_cyl_od,
+                knurl_wd, knurl_hg, knurl_dp,
                 e_smooth, s_smooth);
 }
 
@@ -209,7 +191,7 @@ module knurled_cyl(chg, cod, cwd, csh, cdp, fsh, smt)
     echo("knurled cylinder max diameter: ", 2*cord);
     echo("knurled cylinder min diameter: ", 2*cird);
 
-	 if( fsh < 0 )
+     if( fsh < 0 )
     {
         union()
         {
@@ -243,22 +225,22 @@ module knurled_cyl(chg, cod, cwd, csh, cdp, fsh, smt)
 
 module shape(hsh, ird, ord, fn4, hg)
 {
-	x0= 0;	x1 = hsh > 0 ? ird : ord;		x2 = hsh > 0 ? ord : ird;
-	y0=-0.1;	y1=0;	y2=abs(hsh);	y3=hg-abs(hsh);	y4=hg;	y5=hg+0.1;
+    x0= 0;   x1 = hsh > 0 ? ird : ord;        x2 = hsh > 0 ? ord : ird;
+    y0=-0.1;   y1=0;   y2=abs(hsh);   y3=hg-abs(hsh);   y4=hg;   y5=hg+0.1;
 
-	if ( hsh >= 0 )
-	{
-		rotate_extrude(convexity=10, $fn=fn4)
-		polygon(points=[	[x0,y1],[x1,y1],[x2,y2],[x2,y3],[x1,y4],[x0,y4]	],
-					paths=[	[0,1,2,3,4,5]	]);
-	}
-	else
-	{
-		rotate_extrude(convexity=10, $fn=fn4)
-		polygon(points=[	[x0,y0],[x1,y0],[x1,y1],[x2,y2],
-								[x2,y3],[x1,y4],[x1,y5],[x0,y5]	],
-					paths=[	[0,1,2,3,4,5,6,7]	]);
-	}
+    if ( hsh >= 0 )
+    {
+        rotate_extrude(convexity=10, $fn=fn4)
+        polygon(points=[   [x0,y1],[x1,y1],[x2,y2],[x2,y3],[x1,y4],[x0,y4]   ],
+                paths=[   [0,1,2,3,4,5]   ]);
+    }
+    else
+    {
+        rotate_extrude(convexity=10, $fn=fn4)
+        polygon(points=[   [x0,y0],[x1,y0],[x1,y1],[x2,y2],
+                           [x2,y3],[x1,y4],[x1,y5],[x0,y5]   ],
+                paths=[   [0,1,2,3,4,5,6,7]   ]);
+    }
 }
 
 module knurled_finish(ord, ird, lf, sh, fn, rn)
@@ -294,31 +276,30 @@ module knurled_finish(ord, ird, lf, sh, fn, rn)
                      [4,5,2],[2,5,6],[6,5,9],[9,5,4]
                     ],
                 convexity=5);
-         }
+       }
     }
 }
 
 module knurl_help()
 {
-	echo();
-	echo("    Knurled Surface Library  v2  ");
+    echo();
+    echo("    Knurled Surface Library  v2  ");
    echo("");
-	echo("      Modules:    ");
-	echo("");
-	echo("        knurled_cyl(parameters... );    -    Requires a value for each an every expected parameter (see bellow)    ");
-	echo("");
-	echo("        knurl();    -    Call to the previous module with a set of default parameters,    ");
-	echo("                                  values may be changed by adding 'parameter_name=value'        i.e.     knurl(s_smooth=40);    ");
-	echo("");
-	echo("      Parameters, all of them in mm but the last one.    ");
-	echo("");
-	echo("        k_cyl_hg       -   [ 12   ]  ,,  Height for the knurled cylinder    ");
-	echo("        k_cyl_od      -   [ 25   ]  ,,  Cylinder's Outer Diameter before applying the knurled surfacefinishing.    ");
-	echo("        knurl_wd     -   [   3   ]  ,,  Knurl's Width.    ");
-	echo("        knurl_hg      -   [   4   ]  ,,  Knurl's Height.    ");
-	echo("        knurl_dp     -   [  1.5 ]  ,,  Knurl's Depth.    ");
-	echo("        e_smooth   -    [  2   ]  ,,  Bevel's Height at the bottom and the top of the cylinder    ");
-	echo("        s_smooth   -    [  0   ]  ,,  Knurl's Surface Smoothing :  File donwn the top of the knurl this value, i.e. 40 will snooth it a 40%.    ");
-	echo("");
+    echo("      Modules:    ");
+    echo("");
+    echo("        knurled_cyl(parameters... );    -    Requires a value for each an every expected parameter (see bellow)    ");
+    echo("");
+    echo("        knurl();    -    Call to the previous module with a set of default parameters,    ");
+    echo("                        values may be changed by adding 'parameter_name=value'        i.e.      knurl(s_smooth=40);    ");
+    echo("");
+    echo("      Parameters, all of them in mm but the last one.    ");
+    echo("");
+    echo("        k_cyl_hg        -   [ 12    ]  ,,  Height for the knurled cylinder    ");
+    echo("        k_cyl_od      -   [ 25    ]  ,,  Cylinder's Outer Diameter before applying the knurled surfacefinishing.    ");
+    echo("        knurl_wd     -   [    3    ]  ,,  Knurl's Width.    ");
+    echo("        knurl_hg      -   [    4    ]  ,,  Knurl's Height.    ");
+    echo("        knurl_dp     -   [  1.5 ]  ,,  Knurl's Depth.    ");
+    echo("        e_smooth   -    [  2    ]  ,,  Bevel's Height at the bottom and the top of the cylinder    ");
+    echo("        s_smooth   -    [  0    ]  ,,  Knurl's Surface Smoothing :  File donwn the top of the knurl this value, i.e. 40 will snooth it a 40%.    ");
+    echo("");
 }
-
